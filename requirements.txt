@@ -1,0 +1,15 @@
+fastapi
+uvicorn
+qdrant-client
+langchain
+langchain-core
+langchain-qdrant
+langchain-community
+sentence-transformers
+litellm
+google-cloud-aiplatform
+google-auth
+pydantic
+python-dotenv
+httpx
+pytest
