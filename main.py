@@ -147,5 +147,16 @@ async def chat_completions(req: ChatCompletionRequest):
             usage=resp_usage
         )
 
+    try:
+        text_content = convert_entity_to_text(entity)
+        doc = Document(
+            page_content=text_content,
+            metadata=entity.model_dump()
+        )
+        vector_store.add_documents([doc])
+        return {"status": "success", "message": f"Entity {entity.entity_guid} ingested successfully."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
