@@ -179,6 +179,119 @@ curl -X POST "http://127.0.0.1:8000/v1/chat/completions" \
 
 ---
 
+## 🔌 Integración en tu Aplicación
+
+### Caso 1: Tu app ya usa el formato OpenAI
+
+Si tu aplicación está construida sobre el SDK de OpenAI o consume directamente `/v1/chat/completions`, la integración es inmediata: solo apunta la `base_url` / `baseURL` a rag-jipi en lugar de a OpenAI. No requiere ningún adaptador.
+
+**Python** (con `openai` SDK)
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="http://localhost:8000/v1",
+    api_key="no-se-usa",  # rag-jipi no valida API key; las claves van en .env del servidor
+)
+
+response = client.chat.completions.create(
+    model="gemini/gemini-2.0-flash",
+    messages=[{"role": "user", "content": "¿Qué tratamiento tuvo el paciente John?"}],
+)
+print(response.choices[0].message.content)
+```
+
+**JavaScript / Node.js** (con `openai` SDK)
+```js
+import OpenAI from "openai";
+
+const client = new OpenAI({
+  baseURL: "http://localhost:8000/v1",
+  apiKey: "no-se-usa",
+});
+
+const response = await client.chat.completions.create({
+  model: "gemini/gemini-2.0-flash",
+  messages: [{ role: "user", content: "¿Qué tratamiento tuvo el paciente John?" }],
+});
+console.log(response.choices[0].message.content);
+```
+
+**Fetch directo** (cualquier frontend o backend sin SDK)
+```js
+const response = await fetch("http://localhost:8000/v1/chat/completions", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    model: "gemini/gemini-2.0-flash",
+    messages: [{ role: "user", content: "¿Qué tratamiento tuvo el paciente John?" }],
+  }),
+});
+const data = await response.json();
+console.log(data.choices[0].message.content);
+```
+
+---
+
+### Caso 2: Tu app usa un formato de respuesta propio
+
+Si tu aplicación espera un formato distinto al de OpenAI (por ejemplo, `{ textResponse, sources, error }` como AnythingLLM), necesitás un adaptador en el backend que consuma rag-jipi y transforme la respuesta.
+
+El patrón recomendado es agregar un endpoint proxy en tu servidor que:
+1. Reciba el mensaje en el formato que tu app ya entiende
+2. Llame a rag-jipi con el formato OpenAI
+3. Mapee `choices[0].message.content` al campo que tu app espera
+
+**Ejemplo con Express.js**
+```js
+// Adaptador: convierte respuesta OpenAI → formato propio de tu app
+app.post("/api/chat", async (req, res) => {
+  const { message, model = "gemini/gemini-2.0-flash" } = req.body;
+
+  const ragRes = await fetch("http://localhost:8000/v1/chat/completions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model,
+      messages: [{ role: "user", content: message }],
+    }),
+  });
+
+  const data = await ragRes.json();
+  const textResponse = data.choices?.[0]?.message?.content ?? null;
+
+  // Devolvés en el formato que tu app espera
+  res.json({ textResponse, sources: [], error: null });
+});
+```
+
+**Ejemplo con FastAPI (Python)**
+```python
+from fastapi import FastAPI
+import httpx
+
+app = FastAPI()
+
+@app.post("/api/chat")
+async def chat(body: dict):
+    message = body.get("message", "")
+    model = body.get("model", "gemini/gemini-2.0-flash")
+
+    async with httpx.AsyncClient() as client:
+        rag_res = await client.post(
+            "http://localhost:8000/v1/chat/completions",
+            json={"model": model, "messages": [{"role": "user", "content": message}]},
+        )
+
+    data = rag_res.json()
+    text_response = data["choices"][0]["message"]["content"]
+
+    # Devolvés en el formato que tu app espera
+    return {"textResponse": text_response, "sources": [], "error": None}
+```
+
+---
+
 ## 📁 Estructura del Proyecto
 
 - `main.py`: Archivo raíz de la aplicación FastAPI y controladores de rutas.
