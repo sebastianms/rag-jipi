@@ -1,17 +1,18 @@
-import sys
 import os
 
-# Add parent directory to sys.path to allow importing main and database
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-# Set Qdrant test path to avoid locking issues with the concurrently running dev server
+# Must be set before importing main, which triggers database initialization via lifespan
 os.environ["QDRANT_PATH"] = "./qdrant_test_data"
 
+import shutil
 import unittest
 import uuid
-import shutil
+
+import pytest
 from fastapi.testclient import TestClient
+
 from main import app
+
+_TEST_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "qdrant_test_data")
 
 class TestRAGEngine(unittest.TestCase):
     @classmethod
@@ -59,33 +60,31 @@ class TestRAGEngine(unittest.TestCase):
         response = self.client.post("/v1/chat/completions", json=payload)
         self.assertEqual(response.status_code, 400)
 
+    @pytest.mark.skipif(
+        not os.environ.get("GEMINI_API_KEY"),
+        reason="GEMINI_API_KEY not set"
+    )
     def test_chat_completions_rag(self):
         payload = {
-            "model": "gemini/gemini-1.5-flash", 
+            "model": "gemini/gemini-1.5-flash",
             "messages": [
                 {"role": "user", "content": "Who is Alice Testing?"}
             ],
             "temperature": 0.0
         }
         response = self.client.post("/v1/chat/completions", json=payload)
-        
-        if response.status_code == 200:
-            data = response.json()
-            self.assertIn("id", data)
-            self.assertIn("choices", data)
-            self.assertGreater(len(data["choices"]), 0)
-            self.assertEqual(data["choices"][0]["message"]["role"], "assistant")
-            self.assertTrue(len(data["choices"][0]["message"]["content"]) > 0)
-        else:
-            print(f"Chat completions failed with: {response.status_code} - {response.text}")
-            # If API keys are missing, we expect a 500 error from litellm/fastapi. 
-            self.assertIn(response.status_code, [200, 500])
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("id", data)
+        self.assertIn("choices", data)
+        self.assertGreater(len(data["choices"]), 0)
+        self.assertEqual(data["choices"][0]["message"]["role"], "assistant")
+        self.assertTrue(len(data["choices"][0]["message"]["content"]) > 0)
 
     @classmethod
     def tearDownClass(cls):
-        # Clean up the test database directory
-        if os.path.exists("./qdrant_test_data"):
-            shutil.rmtree("./qdrant_test_data")
+        if os.path.exists(_TEST_DB_PATH):
+            shutil.rmtree(_TEST_DB_PATH)
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
